@@ -1,6 +1,6 @@
 #include "includes.h"
 
-HVH g_hvh{ };;
+HVH g_hvh{ };
 
 void HVH::IdealPitch( ) {
 	CCSGOPlayerAnimState *state = g_cl.m_local->m_PlayerAnimState( );
@@ -555,7 +555,7 @@ void HVH::DoFakeAntiAim( ) {
 		// set base to opposite of direction.
 		g_cl.m_cmd->m_view_angles.y = m_direction + 180.f;
 
-		// apply 45 degree jitter.
+		// apply 90 degree jitter.
 		g_cl.m_cmd->m_view_angles.y += g_csgo.RandomFloat( -90.f, 90.f );
 		break;
 

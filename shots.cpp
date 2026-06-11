@@ -182,7 +182,7 @@ void Shots::OnImpact( IGameEvent *evt ) {
 		if ( mode == Resolver::Modes::RESOLVE_BODY )
 			++data->m_body_index;
 
-		else if ( mode == Resolver::Modes::RESOLVE_STAND )
+		else if( mode == Resolver::Modes::RESOLVE_STAND || mode == Resolver::Modes::RESOLVE_STAND1 )
 			++data->m_stand_index;
 
 		else if ( mode == Resolver::Modes::RESOLVE_STAND2 )
@@ -321,7 +321,7 @@ void Shots::OnHurt( IGameEvent *evt ) {
 	if ( mode == Resolver::Modes::RESOLVE_BODY && data->m_body_index > 0 )
 		--data->m_body_index;
 
-	else if ( mode == Resolver::Modes::RESOLVE_STAND && data->m_stand_index > 0 )
+	else if ( ( mode == Resolver::Modes::RESOLVE_STAND || mode == Resolver::Modes::RESOLVE_STAND1 ) && data->m_stand_index > 0 )
 		--data->m_stand_index;
 
 	else if ( mode == Resolver::Modes::RESOLVE_STAND2 && data->m_stand_index2 > 0 )

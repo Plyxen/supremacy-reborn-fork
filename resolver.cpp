@@ -1,6 +1,6 @@
 #include "includes.h"
 
-Resolver g_resolver{};;
+Resolver g_resolver{};
 
 LagRecord* Resolver::FindIdealRecord( AimPlayer* data ) {
     LagRecord *first_valid, *current;
@@ -44,6 +44,22 @@ LagRecord* Resolver::FindLastRecord( AimPlayer* data ) {
 		// if this record is valid.
 		// we are done since we iterated in reverse.
 		if( current->valid( ) && !current->immune( ) && !current->dormant( ) )
+			return current;
+	}
+
+	return nullptr;
+}
+
+LagRecord* Resolver::FindFirstRecord( AimPlayer* data ) {
+	if( data->m_records.empty( ) )
+		return nullptr;
+
+	// records are stored newest-first (emplace_front), so iterating forward
+	// gives us the most recent record first. return the first valid one.
+	for( const auto& it : data->m_records ) {
+		LagRecord* current = it.get( );
+
+		if( !current->dormant( ) && !current->immune( ) && current->valid( ) )
 			return current;
 	}
 
@@ -134,23 +150,19 @@ void Resolver::MatchShot( AimPlayer* data, LagRecord* record ) {
 }
 
 void Resolver::SetMode( LagRecord* record ) {
-	// the resolver has 3 modes to chose from.
-	// these modes will vary more under the hood depending on what data we have about the player
-	// and what kind of hack vs. hack we are playing (mm/nospread).
-
 	float speed = record->m_anim_velocity.length( );
 
-	// if on ground, moving, and not fakewalking.
-	if( ( record->m_flags & FL_ONGROUND ) && speed > 0.1f && !record->m_fake_walk )
+	// air takes highest priority.
+	if( !( record->m_flags & FL_ONGROUND ) )
+		record->m_mode = Modes::RESOLVE_AIR;
+
+	// moving on ground, not fakewalking.
+	else if( speed > 0.1f && !record->m_fake_walk )
 		record->m_mode = Modes::RESOLVE_WALK;
 
-	// if on ground, not moving or fakewalking.
-	if( ( record->m_flags & FL_ONGROUND ) && ( speed <= 0.1f || record->m_fake_walk ) )
+	// standing still or fakewalking.
+	else
 		record->m_mode = Modes::RESOLVE_STAND;
-
-	// if not on ground.
-	else if( !( record->m_flags & FL_ONGROUND ) )
-		record->m_mode = Modes::RESOLVE_AIR;
 }
 
 void Resolver::ResolveAngles( Player* player, LagRecord* record ) {
@@ -212,111 +224,69 @@ void Resolver::ResolveStand( AimPlayer* data, LagRecord* record ) {
 	// pointer for easy access.
 	LagRecord* move = &data->m_walk_record;
 
-	// we have a valid moving record.
+	// re-evaluate walk context every tick — do not carry stale state forward.
+	data->m_moved = false;
+
 	if( move->m_sim_time > 0.f ) {
 		vec3_t delta = move->m_origin - record->m_origin;
 
-		// check if moving record is close.
-		if( delta.length( ) <= 128.f ) {
-			// indicate that we are using the moving lby.
+		// only use walk context if the player stopped within 128 units of their last walk pos.
+		if( delta.length( ) <= 128.f )
 			data->m_moved = true;
-		}
 	}
 
-	// a valid moving context was found
+	// a valid moving context was found.
 	if( data->m_moved ) {
-		float diff = math::NormalizedAngle( record->m_body - move->m_body );
 		float delta = record->m_anim_time - move->m_anim_time;
 
-		// it has not been time for this first update yet.
+		// it has not been time for the first LBY update yet.
 		if( delta < 0.22f ) {
-			// set angles to current LBY.
 			record->m_eye_angles.y = move->m_body;
-
-			// set resolve mode.
 			record->m_mode = Modes::RESOLVE_STOPPED_MOVING;
-
-			// exit out of the resolver, thats it.
 			return;
 		}
 
-		// LBY SHOULD HAVE UPDATED HERE.
+		// LBY should have updated here.
 		else if( record->m_anim_time >= data->m_body_update ) {
-			// only shoot the LBY flick 3 times.
-			// if we happen to miss then we most likely mispredicted.
+			// try the LBY flick up to 3 times before giving up.
 			if( data->m_body_index <= 3 ) {
-				// set angles to current LBY.
 				record->m_eye_angles.y = record->m_body;
-
-				// predict next body update.
-				data->m_body_update = record->m_anim_time + 1.1f;
-
-				// set the resolve mode.
-				record->m_mode = Modes::RESOLVE_BODY;
-
+				data->m_body_update    = record->m_anim_time + 1.1f;
+				record->m_mode         = Modes::RESOLVE_BODY;
 				return;
 			}
 
-			// set to stand1 -> known last move.
+			// stand1 — have walk context, LBY flick failed. brute-force the angle space.
 			record->m_mode = Modes::RESOLVE_STAND1;
 
-			C_AnimationLayer* curr = &record->m_layers[ 3 ];
-			int act = data->m_player->GetSequenceActivity( curr->m_sequence );
-
-			// ok, no fucking update. apply big resolver.
-			record->m_eye_angles.y = move->m_body;
-
-			// every third shot do some fuckery.
-			if ( !( data->m_stand_index % 3 ) )
-				record->m_eye_angles.y += g_csgo.RandomFloat( -35.f, 35.f );
-
-			// jesus we can fucking stop missing can we?
-			if( data->m_stand_index > 6 && act != 980 ) {
-				// lets just hope they switched ang after move.
-				record->m_eye_angles.y = move->m_body + 180.f;
-			}
-
-			// we missed 4 shots.
-			else if( data->m_stand_index > 4 && act != 980 ) {
-				// try backwards.
-				record->m_eye_angles.y = away + 180.f;
+			switch( data->m_stand_index % 8 ) {
+			case 0: record->m_eye_angles.y = away + 180.f;       break; // face-on — most common aa angle
+			case 1: record->m_eye_angles.y = record->m_body;     break; // raw lby (may still be real)
+			case 2: record->m_eye_angles.y = move->m_body;       break; // lby from last walk
+			case 3: record->m_eye_angles.y = move->m_body + 58.f; break; // left side off-body
+			case 4: record->m_eye_angles.y = move->m_body - 58.f; break; // right side off-body
+			case 5: record->m_eye_angles.y = move->m_body + 180.f; break; // flip from walk lby
+			case 6: record->m_eye_angles.y = away + 90.f;        break;
+			case 7: record->m_eye_angles.y = away - 90.f;        break;
 			}
 
 			return;
 		}
 	}
 
-	// stand2 -> no known last move.
+	// stand2 — no walk context. brute-force from away angle outward.
 	record->m_mode = Modes::RESOLVE_STAND2;
 
-	switch( data->m_stand_index2 % 6 ) {
-
-	case 0:
-		record->m_eye_angles.y = away + 180.f;
-		break;
-
-	case 1:
-		record->m_eye_angles.y = record->m_body;
-		break;
-
-	case 2:
-		record->m_eye_angles.y = record->m_body + 180.f;
-		break;
-
-	case 3:
-		record->m_eye_angles.y = record->m_body + 110.f;
-		break;
-
-	case 4:
-		record->m_eye_angles.y = record->m_body - 110.f;
-		break;
-
-	case 5:
-		record->m_eye_angles.y = away;
-		break;
-
-	default:
-		break;
+	switch( data->m_stand_index2 % 8 ) {
+	case 0: record->m_eye_angles.y = away + 180.f;           break; // face-on
+	case 1: record->m_eye_angles.y = record->m_body;         break; // raw lby
+	case 2: record->m_eye_angles.y = record->m_body + 180.f; break;
+	case 3: record->m_eye_angles.y = record->m_body + 90.f;  break;
+	case 4: record->m_eye_angles.y = record->m_body - 90.f;  break;
+	case 5: record->m_eye_angles.y = away;                   break;
+	case 6: record->m_eye_angles.y = away + 90.f;            break;
+	case 7: record->m_eye_angles.y = away - 90.f;            break;
+	default: break;
 	}
 }
 
@@ -391,18 +361,12 @@ void Resolver::ResolveAir( AimPlayer* data, LagRecord* record ) {
 	// this should be a rough estimation of where he is looking.
 	float velyaw = math::rad_to_deg( std::atan2( record->m_velocity.y, record->m_velocity.x ) );
 
-	switch( data->m_shots % 3 ) {
-	case 0:
-		record->m_eye_angles.y = velyaw + 180.f;
-		break;
-
-	case 1:
-		record->m_eye_angles.y = velyaw - 90.f;
-		break;
-
-	case 2:
-		record->m_eye_angles.y = velyaw + 90.f;
-		break;
+	switch( data->m_shots % 5 ) {
+	case 0: record->m_eye_angles.y = velyaw + 180.f; break;
+	case 1: record->m_eye_angles.y = velyaw - 90.f;  break;
+	case 2: record->m_eye_angles.y = velyaw + 90.f;  break;
+	case 3: record->m_eye_angles.y = velyaw + 135.f; break;
+	case 4: record->m_eye_angles.y = velyaw - 135.f; break;
 	}
 }
 
@@ -455,10 +419,10 @@ void Resolver::ResolvePoses( Player* player, LagRecord* record ) {
 	if( record->m_mode == Modes::RESOLVE_AIR ) {
 		// ang = pose min + pose val x ( pose range )
 
-		// lean_yaw
-		player->m_flPoseParameter( )[ 2 ]  = g_csgo.RandomInt( 0, 4 ) * 0.25f;   
+		// lean_yaw — cycle 0..4 deterministically based on shots.
+		player->m_flPoseParameter( )[ 2 ]  = ( data->m_shots % 5 ) * 0.25f;
 
-		// body_yaw
-		player->m_flPoseParameter( )[ 11 ] = g_csgo.RandomInt( 1, 3 ) * 0.25f;
+		// body_yaw — cycle 1..3 deterministically.
+		player->m_flPoseParameter( )[ 11 ] = ( ( data->m_shots % 3 ) + 1 ) * 0.25f;
 	}
 }
