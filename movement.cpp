@@ -1,6 +1,6 @@
 #include "includes.h"
 
-Movement g_movement{ };;
+Movement g_movement{ };
 
 void Movement::JumpRelated( ) {
 	if( g_cl.m_local->m_MoveType( ) == MOVETYPE_NOCLIP )
@@ -25,9 +25,8 @@ void Movement::Strafe( ) {
 	if( g_cl.m_local->m_MoveType( ) == MOVETYPE_NOCLIP || g_cl.m_local->m_MoveType( ) == MOVETYPE_LADDER )
 		return;
 
-	// disable strafing while pressing shift.
-	// don't strafe if not holding primary jump key.
-	if( ( g_cl.m_buttons & IN_SPEED ) || !( g_cl.m_buttons & IN_JUMP ) || ( g_cl.m_flags & FL_ONGROUND ) )
+	// disable strafing while pressing shift or while on the ground.
+	if( ( g_cl.m_buttons & IN_SPEED ) || ( g_cl.m_flags & FL_ONGROUND ) )
 		return;
 
 	// get networked velocity ( maybe absvelocity better here? ).
@@ -431,6 +430,11 @@ void Movement::AutoPeek( ) {
 
 	bool can_stop = g_menu.main.movement.autostop_always_on.get( ) || ( !g_menu.main.movement.autostop_always_on.get( ) && g_input.GetKeyState( g_menu.main.movement.autostop.get( ) ) );
 	if( ( g_input.GetKeyState( g_menu.main.movement.autopeek.get( ) ) || can_stop ) && g_aimbot.m_stop ) {
+		Movement::QuickStop( );
+	}
+
+	// jump-scout air autostop: kill horizontal velocity at the apex when a lethal target is found.
+	if( !( g_cl.m_flags & FL_ONGROUND ) && g_aimbot.m_stop_air ) {
 		Movement::QuickStop( );
 	}
 }

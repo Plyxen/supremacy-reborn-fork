@@ -195,8 +195,22 @@ void Resolver::ResolveAngles( Player* player, LagRecord* record ) {
 }
 
 void Resolver::ResolveWalk( AimPlayer* data, LagRecord* record ) {
-	// apply lby to eyeangles.
-	record->m_eye_angles.y = record->m_body;
+	// velocity-direction vs body-yaw disambiguation (inspired by network-AA analysis).
+	// when the player is strafing sideways (45-135° off body yaw), their body yaw is
+	// lagging behind their actual movement — use the away angle as a better estimate.
+	// back-pedaling (>135°) and forward (< 45°) both leave body yaw as the best guess.
+	float vel_len = record->m_velocity.length_2d( );
+	if( vel_len > 30.f ) {
+		float vel_yaw = math::rad_to_deg( std::atan2( record->m_velocity.y, record->m_velocity.x ) );
+		float diff    = std::abs( math::NormalizedAngle( vel_yaw - record->m_body ) );
+
+		if( diff >= 45.f && diff <= 135.f )
+			record->m_eye_angles.y = GetAwayAngle( record );
+		else
+			record->m_eye_angles.y = record->m_body;
+	}
+	else
+		record->m_eye_angles.y = record->m_body;
 
 	// delay body update.
 	data->m_body_update = record->m_anim_time + 0.22f;
@@ -275,7 +289,26 @@ void Resolver::ResolveStand( AimPlayer* data, LagRecord* record ) {
 	}
 
 	// stand2 — no walk context. brute-force from away angle outward.
+	// fast-path: if body yaw has been static for 4+ consecutive records with no
+	// misses recorded, the player is using fixed AA — away+180 is most likely real.
+	bool static_aa = false;
+	if( data->m_records.size( ) >= 4 && data->m_missed_shots == 0 ) {
+		float ref = data->m_records[ 0 ]->m_body;
+		static_aa = true;
+		for( int si = 1; si < 4 && static_aa; ++si ) {
+			auto& r = data->m_records[ si ];
+			if( r->valid( ) && !r->dormant( ) )
+				if( std::abs( math::NormalizedAngle( r->m_body - ref ) ) > 5.f )
+					static_aa = false;
+		}
+	}
+
 	record->m_mode = Modes::RESOLVE_STAND2;
+
+	if( static_aa ) {
+		record->m_eye_angles.y = away + 180.f;
+		return;
+	}
 
 	switch( data->m_stand_index2 % 8 ) {
 	case 0: record->m_eye_angles.y = away + 180.f;           break; // face-on

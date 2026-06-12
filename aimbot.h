@@ -136,7 +136,9 @@ public:
 	// fake latency stuff.
 	bool       m_fake_latency;
 
-	bool m_stop;
+	bool  m_stop;
+	bool  m_stop_air;    // jump-scout: stop horizontal vel at apex when lethal target found
+	float m_prev_vel_z;  // previous tick z-velocity for apex detection (not reset per tick)
 
 public:
 	__forceinline void reset( ) {
@@ -177,6 +179,7 @@ public:
 	bool SelectTarget( LagRecord* record, const vec3_t& aim, float damage );
 	void apply( );
 	void NoSpread( );
+	bool IsAtJumpApex( );
 
 	// knifebot.
 	void knife( );

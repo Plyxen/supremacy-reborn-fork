@@ -42,6 +42,7 @@ using ulong_t = unsigned long;
 
 // our custom wrapper.
 #include "unique_vector.h"
+#include "debug.h"
 #include "tinyformat.h"
 
 // other includes.

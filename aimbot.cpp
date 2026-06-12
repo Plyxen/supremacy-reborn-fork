@@ -434,7 +434,8 @@ void Aimbot::init() {
 	m_angle = ang_t{ };
 	m_damage = 0.f;
 	m_record = nullptr;
-	m_stop = false;
+	m_stop     = false;
+	m_stop_air = false;
 
 	m_best_dist = std::numeric_limits< float >::max();
 	m_best_fov = 180.f + 1.f;
@@ -450,6 +451,27 @@ void Aimbot::StripAttack() {
 
 	else
 		g_cl.m_cmd->m_buttons &= ~IN_ATTACK;
+}
+
+bool Aimbot::IsAtJumpApex( ) {
+	if( !g_cl.m_local || !g_cl.m_local->alive( ) )
+		return false;
+
+	// must be in the air.
+	if( g_cl.m_flags & FL_ONGROUND )
+		return false;
+
+	float vel_z = g_cl.m_local->m_vecAbsVelocity( ).z;
+
+	// apex: velocity crossed zero from positive to negative (true apex),
+	// OR we are close enough that the weapon inaccuracy is still acceptable.
+	// the 20 u/s threshold gives a wider stop window on low sv_airaccelerate servers.
+	bool at_apex = ( m_prev_vel_z > 0.f && vel_z <= 0.f ) || std::abs( vel_z ) < 20.f;
+
+	// store for next tick comparison.
+	m_prev_vel_z = vel_z;
+
+	return at_apex;
 }
 
 void Aimbot::think() {
@@ -622,6 +644,11 @@ void Aimbot::find() {
 
 		// set autostop shit.
 		m_stop = !(g_cl.m_buttons & IN_JUMP);
+
+		// jump-scout air autostop: stop horizontal velocity at the apex when
+		// a lethal target exists. only active while the player is in the air.
+		if( !( g_cl.m_flags & FL_ONGROUND ) && best.damage >= 100.f )
+			m_stop_air = IsAtJumpApex( );
 
 		bool on = g_menu.main.aimbot.hitchance.get() && g_menu.main.config.mode.get() == 0;
 		bool hit = on && CheckHitchance(m_target, m_angle);

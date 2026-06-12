@@ -5,6 +5,9 @@ Client g_cl{ };
 
 // init routine.
 ulong_t __stdcall Client::init(void* arg) {
+	// install crash handler and open debug log.
+	dbg::Install( );
+
 	// if not in interwebz mode, the driver will not set the username.
 	g_cl.m_user = XOR("user");
 
