@@ -168,12 +168,22 @@ void Shots::OnImpact( IGameEvent *evt ) {
 	// intersect our historical matrix with the path the shot took.
 	g_csgo.m_engine_trace->ClipRayToEntity( Ray( start, end ), MASK_SHOT, target, &trace );
 
-	// we did not hit jackshit, or someone else.
-	if ( !trace.m_entity || !trace.m_entity->IsPlayer( ) || trace.m_entity != target )
-		g_notify.add( XOR( "shot missed due to spread\n" ) );
+	static const char* s_mode_names[] = {
+		"none", "walk", "stand", "stand1", "stand2", "air", "body", "stopped"
+	};
+	auto mode_str = [ & ]( size_t m ) -> const char* {
+		return ( m < 8 ) ? s_mode_names[ m ] : "?";
+	};
 
-	// we should have 100% hit this player..
-	// this is a miss due to wrong angles.
+	// we did not hit jackshit, or someone else — spread miss.
+	if ( !trace.m_entity || !trace.m_entity->IsPlayer( ) || trace.m_entity != target ) {
+		std::string spread_log = tfm::format( XOR( "spread miss | dmg:%.0f lat:%.0fms\n" ),
+			shot->m_damage, shot->m_lat * 1000.f );
+		g_notify.add( spread_log, Color( 255, 180, 0, 255 ) );
+		dbg::Logf( "SPREAD", "%s", spread_log.c_str( ) );
+	}
+
+	// we should have 100% hit this player — miss due to wrong resolver angles.
 	else if ( trace.m_entity == target ) {
 		size_t mode = shot->m_record->m_mode;
 
@@ -189,6 +199,16 @@ void Shots::OnImpact( IGameEvent *evt ) {
 			++data->m_stand_index2;
 
 		++data->m_missed_shots;
+
+		// rich angle-miss log — feed this back to diagnose resolver issues.
+		std::string miss_log = tfm::format(
+			XOR( "miss [%s] eye:%.1f body:%.1f total:%d\n" ),
+			mode_str( mode ),
+			shot->m_record->m_eye_angles.y,
+			shot->m_record->m_body,
+			data->m_missed_shots );
+		g_notify.add( miss_log, Color( 255, 80, 80, 255 ) );
+		dbg::Logf( "MISS", "%s", miss_log.c_str( ) );
 	}
 
 	// restore player to his original state.
@@ -315,6 +335,20 @@ void Shots::OnHurt( IGameEvent *evt ) {
 	data->m_missed_shots = 0;
 
 	size_t mode = impact->m_shot->m_record->m_mode;
+
+	// store the working eye angle so the resolver can replay it.
+	data->m_last_hit_yaw   = impact->m_shot->m_record->m_eye_angles.y;
+	data->m_last_hit_shots = 5;
+
+	{
+		static const char* s_hit_modes[] = {
+			"none", "walk", "stand", "stand1", "stand2", "air", "body", "stopped"
+		};
+		const char* mname = ( mode < 8 ) ? s_hit_modes[ mode ] : "?";
+		dbg::Logf( "HIT", "hit %s | group:%d dmg:%.0f | resolver:[%s] eye:%.1f",
+			name.c_str( ), group, damage, mname,
+			impact->m_shot->m_record->m_eye_angles.y );
+	}
 
 	// if we miss a shot on body update.
 	// we can chose to stop shooting at them.

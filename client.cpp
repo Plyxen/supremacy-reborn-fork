@@ -190,6 +190,7 @@ void Client::DoMove() {
 	// run movement code before input prediction.
 	g_movement.JumpRelated();
 	g_movement.Strafe();
+	g_movement.WASDAirStrafe();
 	g_movement.FakeWalk();
 	g_movement.AutoPeek();
 

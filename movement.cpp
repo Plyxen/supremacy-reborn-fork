@@ -156,6 +156,74 @@ void Movement::Strafe( ) {
 	}
 }
 
+void Movement::WASDAirStrafe( ) {
+	// gate: on ground, ladder, noclip, shift, or mouse-autostrafe active.
+	if( g_cl.m_flags & FL_ONGROUND )
+		return;
+	if( g_cl.m_local->m_MoveType( ) == MOVETYPE_NOCLIP || g_cl.m_local->m_MoveType( ) == MOVETYPE_LADDER )
+		return;
+	if( g_cl.m_buttons & IN_SPEED )
+		return;
+	if( g_menu.main.movement.autostrafe.get( ) )
+		return;
+
+	// which WASD keys are held?
+	bool fwd  = !!( g_cl.m_buttons & IN_FORWARD );
+	bool back = !!( g_cl.m_buttons & IN_BACK );
+	bool left = !!( g_cl.m_buttons & IN_MOVELEFT );
+	bool rght = !!( g_cl.m_buttons & IN_MOVERIGHT );
+
+	// at least one key must be held.
+	if( !fwd && !back && !left && !rght )
+		return;
+
+	// desired movement yaw relative to view direction.
+	// diagonals are handled by averaging the two key offsets.
+	float offset = 0.f;
+	int   count  = 0;
+	if( fwd  ) { offset += 0.f;   ++count; }
+	if( back ) { offset += 180.f; ++count; }
+	if( left ) { offset += 90.f;  ++count; }
+	if( rght ) { offset -= 90.f;  ++count; }
+	offset /= ( float )count;
+
+	float desired_yaw = math::NormalizedAngle( g_cl.m_cmd->m_view_angles.y + offset );
+
+	// current velocity.
+	vec3_t velocity = g_cl.m_local->m_vecVelocity( );
+	float  speed    = velocity.length_2d( );
+
+	// need some velocity to produce a meaningful ideal angle.
+	if( speed < 1.f ) {
+		// not moving yet — just set a small sidemove to start acceleration.
+		g_cl.m_cmd->m_forward_move = 0.f;
+		g_cl.m_cmd->m_side_move    = left ? 450.f : -450.f;
+		return;
+	}
+
+	// ideal air-acceleration angle (same formula as the rest of the strafers).
+	float ideal = ( speed > 0.f ) ? math::rad_to_deg( std::asin( 15.f / speed ) ) : 90.f;
+	math::clamp( ideal, 0.f, 90.f );
+
+	// turn delta from current velocity direction toward desired direction.
+	float vel_yaw   = math::rad_to_deg( std::atan2( velocity.y, velocity.x ) );
+	float turn_delta = math::NormalizedAngle( desired_yaw - vel_yaw );
+
+	// cancel forward move — let side move drive acceleration.
+	g_cl.m_cmd->m_forward_move = 0.f;
+
+	if( turn_delta > 0.f ) {
+		// turning left.
+		g_cl.m_cmd->m_view_angles.y += ideal;
+		g_cl.m_cmd->m_side_move      = 450.f;
+	}
+	else {
+		// turning right.
+		g_cl.m_cmd->m_view_angles.y -= ideal;
+		g_cl.m_cmd->m_side_move      = -450.f;
+	}
+}
+
 void Movement::DoPrespeed( ) {
 	float   mod, min, max, step, strafe, time, angle;
 	vec3_t  plane;

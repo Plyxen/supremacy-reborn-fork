@@ -62,6 +62,11 @@ public:
 	float m_body;
 	float m_old_body;
 
+	// locked resolver yaw: when a hit is confirmed, store the working eye angle
+	// and replay it for the next N shots before brute-forcing again.
+	float m_last_hit_yaw;
+	int   m_last_hit_shots;
+
 	//std::deque< float >            m_lbyt_update;
 	//std::deque< float >			   m_prefer_stand;
 	//std::deque< float >            m_prefer_air;
@@ -79,8 +84,10 @@ public:
 		m_player       = nullptr;
 		m_spawn        = 0.f;
 		m_walk_record  = LagRecord{};
-		m_shots        = 0;
-		m_missed_shots = 0;
+		m_shots          = 0;
+		m_missed_shots   = 0;
+		m_last_hit_yaw   = 0.f;
+		m_last_hit_shots = 0;
 
 		m_records.clear( );
 		m_hitboxes.clear( );

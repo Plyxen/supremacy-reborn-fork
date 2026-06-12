@@ -195,22 +195,37 @@ void Resolver::ResolveAngles( Player* player, LagRecord* record ) {
 }
 
 void Resolver::ResolveWalk( AimPlayer* data, LagRecord* record ) {
-	// velocity-direction vs body-yaw disambiguation (inspired by network-AA analysis).
-	// when the player is strafing sideways (45-135° off body yaw), their body yaw is
-	// lagging behind their actual movement — use the away angle as a better estimate.
-	// back-pedaling (>135°) and forward (< 45°) both leave body yaw as the best guess.
-	float vel_len = record->m_velocity.length_2d( );
-	if( vel_len > 30.f ) {
-		float vel_yaw = math::rad_to_deg( std::atan2( record->m_velocity.y, record->m_velocity.x ) );
-		float diff    = std::abs( math::NormalizedAngle( vel_yaw - record->m_body ) );
+	// LBY delta detection: if body yaw changed by >2° since the last record, the LBY
+	// proxy just updated this tick — that IS the real yaw. Trust it immediately.
+	bool lby_trusted = false;
+	if( data->m_records.size( ) >= 2 ) {
+		LagRecord* prev = data->m_records[ 1 ].get( );
+		if( prev && !prev->dormant( ) && prev->valid( ) ) {
+			float lby_delta = std::abs( math::NormalizedAngle( record->m_body - prev->m_body ) );
+			if( lby_delta > 2.f ) {
+				record->m_eye_angles.y = record->m_body;
+				lby_trusted = true;
+			}
+		}
+	}
 
-		if( diff >= 45.f && diff <= 135.f )
-			record->m_eye_angles.y = GetAwayAngle( record );
+	if( !lby_trusted ) {
+		// velocity-direction vs body-yaw disambiguation.
+		// when the player is strafing sideways (45-135° off body yaw), their body yaw is
+		// lagging behind actual movement — use the away angle as a better estimate.
+		float vel_len = record->m_velocity.length_2d( );
+		if( vel_len > 30.f ) {
+			float vel_yaw = math::rad_to_deg( std::atan2( record->m_velocity.y, record->m_velocity.x ) );
+			float diff    = std::abs( math::NormalizedAngle( vel_yaw - record->m_body ) );
+
+			if( diff >= 45.f && diff <= 135.f )
+				record->m_eye_angles.y = GetAwayAngle( record );
+			else
+				record->m_eye_angles.y = record->m_body;
+		}
 		else
 			record->m_eye_angles.y = record->m_body;
 	}
-	else
-		record->m_eye_angles.y = record->m_body;
 
 	// delay body update.
 	data->m_body_update = record->m_anim_time + 0.22f;
@@ -247,6 +262,15 @@ void Resolver::ResolveStand( AimPlayer* data, LagRecord* record ) {
 		// only use walk context if the player stopped within 128 units of their last walk pos.
 		if( delta.length( ) <= 128.f )
 			data->m_moved = true;
+	}
+
+	// locked resolver yaw: if we confirmed a hit on this player recently, replay
+	// that exact eye angle for up to m_last_hit_shots more shots before brute-forcing.
+	if( data->m_last_hit_shots > 0 ) {
+		record->m_eye_angles.y = data->m_last_hit_yaw;
+		--data->m_last_hit_shots;
+		record->m_mode = Modes::RESOLVE_STAND1;
+		return;
 	}
 
 	// a valid moving context was found.

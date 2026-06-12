@@ -619,11 +619,14 @@ void Aimbot::find() {
 
 			// rip something went wrong..
 			if (t->GetBestAimPosition(tmp_pos, tmp_damage, last) && SelectTarget(last, tmp_pos, tmp_damage)) {
-				// if we made it so far, set shit.
-				best.player = t->m_player;
-				best.pos = tmp_pos;
-				best.damage = tmp_damage;
-				best.record = last;
+				// only overwrite best if this record offers more damage.
+				// prevents a stale history record from displacing a better ideal record.
+				if( tmp_damage > best.damage ) {
+					best.player = t->m_player;
+					best.pos    = tmp_pos;
+					best.damage = tmp_damage;
+					best.record = last;
+				}
 			}
 		}
 	}
@@ -641,6 +644,22 @@ void Aimbot::find() {
 
 		// write data, needed for traces / etc.
 		m_record->cache();
+
+		// target position prediction: extrapolate by the one-way delay so we aim
+		// at where the target will be when the bullet arrives, not where they are now.
+		{
+			float owd = g_cl.m_latency * 0.5f;
+			vec3_t vel = m_record->m_velocity;
+			if( owd > 0.f && vel.length_2d( ) > 10.f ) {
+				vec3_t predicted = m_aim + ( vel * owd );
+				// sanity cap: discard prediction if it shifts aim by more than 20 degrees.
+				float fov_shift = math::GetFOV( m_angle, g_cl.m_shoot_pos, predicted );
+				if( fov_shift <= 20.f ) {
+					m_aim = predicted;
+					math::VectorAngles( predicted - g_cl.m_shoot_pos, m_angle );
+				}
+			}
+		}
 
 		// set autostop shit.
 		m_stop = !(g_cl.m_buttons & IN_JUMP);

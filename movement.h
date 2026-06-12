@@ -17,6 +17,7 @@ public:
 public:
 	void JumpRelated( );
 	void Strafe( );
+	void WASDAirStrafe( );
 	void DoPrespeed( );
 	bool GetClosestPlane( vec3_t& plane );
 	bool WillCollide( float time, float step );

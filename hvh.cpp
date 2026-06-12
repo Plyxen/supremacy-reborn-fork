@@ -498,9 +498,14 @@ void HVH::DoRealAntiAim( ) {
 				// get the range from the menu.
 				float range = m_jitter_range / 2.f;
 
-			// deterministic tick-based alternation instead of random.
-			// swaps direction every tick — consistent desync, harder to pattern-match.
-			g_cl.m_cmd->m_view_angles.y += ( ( g_cl.m_tick % 2 ) ? range : -range );
+				// set angle.
+				g_cl.m_cmd->m_view_angles.y += g_csgo.RandomFloat( -range, range );
+				break;
+			}
+
+				  // rotate.
+			case 3: {
+				// set base angle.
 				g_cl.m_cmd->m_view_angles.y = ( m_direction - m_rot_range / 2.f );
 
 				// apply spin.
